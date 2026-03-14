@@ -67,7 +67,7 @@ function AppContent() {
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1543333995-a78439f7efce?auto=format&fit=crop&q=80&w=1000');
+  const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1773488966076-d2c6b3735e20?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,11 +125,10 @@ function AppContent() {
                   <img 
                     src={coverImage} 
                     alt="How i lost my Sumi" 
-                    className="absolute inset-0 w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover z-0"
                     onError={(e) => {
-                      e.currentTarget.src = "https://picsum.photos/seed/sumi-cover/400/600";
-                      e.currentTarget.className = "absolute inset-0 w-full h-full object-cover opacity-40";
+                      e.currentTarget.src = "https://images.unsplash.com/photo-1773488966076-d2c6b3735e20?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
+                      e.currentTarget.className = "absolute inset-0 w-full h-full object-cover";
                     }}
                   />
                 </div>
