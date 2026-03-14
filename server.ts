@@ -33,10 +33,16 @@ async function startServer() {
   app.post("/api/chapters", (req, res) => {
     try {
       const chapters = req.body;
+      if (!Array.isArray(chapters)) {
+        console.error("Invalid chapters data received:", chapters);
+        return res.status(400).json({ error: "Invalid data format: expected an array" });
+      }
+      console.log(`Saving ${chapters.length} chapters to ${chaptersFilePath}`);
       fs.writeFileSync(chaptersFilePath, JSON.stringify(chapters, null, 2));
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save chapters" });
+      console.error("Failed to save chapters:", error);
+      res.status(500).json({ error: "Failed to save chapters", details: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -51,6 +57,7 @@ async function startServer() {
         res.json({ cover: '/cover.png' });
       }
     } catch (error) {
+      console.error("Failed to read cover:", error);
       res.status(500).json({ error: "Failed to read cover" });
     }
   });
@@ -59,10 +66,12 @@ async function startServer() {
   app.post("/api/cover", (req, res) => {
     try {
       const { cover } = req.body;
+      console.log(`Saving cover image to ${coverFilePath} (length: ${cover?.length})`);
       fs.writeFileSync(coverFilePath, cover);
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save cover" });
+      console.error("Failed to save cover:", error);
+      res.status(500).json({ error: "Failed to save cover", details: error instanceof Error ? error.message : String(error) });
     }
   });
 

@@ -166,7 +166,7 @@ function AppContent() {
     localStorage.setItem('lost-memories-chapters', JSON.stringify(newChapters));
   };
 
-  const handleSaveChapter = (e: React.FormEvent) => {
+  const handleSaveChapter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingChapter) return;
 
@@ -181,6 +181,27 @@ function AppContent() {
     
     saveToLocal(newChapters);
     setEditingChapter(null);
+
+    // Auto-save to server
+    setSaveStatus('saving');
+    try {
+      const chResp = await fetch('/api/chapters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newChapters)
+      });
+      if (chResp.ok) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      } else {
+        const err = await chResp.json().catch(() => ({ error: 'Unknown error' }));
+        alert(`Failed to save chapter to server: ${err.error}\nDetails: ${err.details || 'None'}`);
+        setSaveStatus('error');
+      }
+    } catch (error) {
+      console.error("Failed to save chapter:", error);
+      setSaveStatus('error');
+    }
   };
 
   const startEditing = (chapter: Chapter | null) => {
@@ -230,6 +251,10 @@ function AppContent() {
         setSaveStatus('success');
         setTimeout(() => setSaveStatus('idle'), 3000);
       } else {
+        const chErr = !chResp.ok ? await chResp.json().catch(() => ({ error: 'Unknown error' })) : null;
+        const cvErr = !cvResp.ok ? await cvResp.json().catch(() => ({ error: 'Unknown error' })) : null;
+        console.error("Save failed:", { chErr, cvErr });
+        alert(`Save failed!\nChapters: ${chErr?.error || 'OK'}\nCover: ${cvErr?.error || 'OK'}\nDetails: ${chErr?.details || cvErr?.details || 'None'}`);
         setSaveStatus('error');
       }
     } catch (error) {
