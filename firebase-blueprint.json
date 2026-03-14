@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "Chapter": {
+      "title": "Chapter",
+      "description": "A chapter in the story book",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "label": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "label", "title", "content", "order"]
+    },
+    "Metadata": {
+      "title": "Metadata",
+      "description": "Application metadata like cover image",
+      "type": "object",
+      "properties": {
+        "coverImage": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/chapters/{chapterId}": {
+      "schema": "Chapter",
+      "description": "Collection of story chapters"
+    },
+    "/metadata/app_state": {
+      "schema": "Metadata",
+      "description": "Global application state"
+    }
+  }
+}

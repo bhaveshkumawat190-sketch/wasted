@@ -7,6 +7,27 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Type, Menu, LogIn, LogOut, Database, Home, Trash2, Edit, Plus, Save, X, Lock, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  getDoc,
+  getDocs,
+  writeBatch,
+  getDocFromServer
+} from 'firebase/firestore';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut,
+  User
+} from 'firebase/auth';
+import { db, auth } from './firebase';
 
 type Screen = 'cover' | 'toc' | 'reader' | 'admin-login' | 'admin-dashboard';
 
@@ -15,7 +36,59 @@ interface Chapter {
   label: string;
   title: string;
   content: string;
+  order: number;
   isNew?: boolean;
+}
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
@@ -66,66 +139,68 @@ function AppContent() {
   const [screen, setScreen] = useState<Screen>('cover');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [coverImage, setCoverImage] = useState<string>('/cover.png');
-  const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const readerRef = useRef<HTMLDivElement>(null);
 
+  const ADMIN_EMAIL = "bhavesh.kumawat@myoperator.co";
+
+  // Test connection
   useEffect(() => {
-    const loadData = async () => {
+    async function testConnection() {
       try {
-        // Try server first
-        const response = await fetch('/api/chapters');
-        if (response.ok) {
-          const data = await response.json();
-          setChapters(data);
-        } else {
-          // Fallback to local storage if server fails
-          const saved = localStorage.getItem('lost-memories-chapters');
-          if (saved) {
-            setChapters(JSON.parse(saved));
-          } else {
-            const staticResponse = await fetch('/chapters.json');
-            if (staticResponse.ok) {
-              const data = await staticResponse.json();
-              setChapters(data);
-            }
-          }
-        }
-
-        const coverResponse = await fetch('/api/cover');
-        if (coverResponse.ok) {
-          const data = await coverResponse.json();
-          setCoverImage(data.cover);
-        } else {
-          const savedCover = localStorage.getItem('lost-memories-cover');
-          if (savedCover) {
-            setCoverImage(savedCover);
-          }
-        }
+        await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error) {
-        console.error("Error loading data:", error);
-      } finally {
-        setLoading(false);
+        if(error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. ");
+        }
       }
-    };
-
-    loadData();
-
-    // Check local admin session
-    const adminSession = localStorage.getItem('lost-memories-admin');
-    if (adminSession === 'true') {
-      setIsAdmin(true);
-      setIsAdminLoggedIn(true);
     }
+    testConnection();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAdmin(currentUser?.email === ADMIN_EMAIL && currentUser?.emailVerified === true);
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'chapters'), orderBy('order', 'asc'));
+    const unsubscribeChapters = onSnapshot(q, (snapshot) => {
+      const chaptersData = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: parseInt(doc.id)
+      })) as Chapter[];
+      setChapters(chaptersData);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'chapters');
+    });
+
+    const unsubscribeMetadata = onSnapshot(doc(db, 'metadata', 'app_state'), (docSnap) => {
+      if (docSnap.exists()) {
+        setCoverImage(docSnap.data().coverImage || '/cover.png');
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'metadata/app_state');
+    });
+
+    return () => {
+      unsubscribeChapters();
+      unsubscribeMetadata();
+    };
   }, []);
 
   const openChapter = (idx: number) => {
@@ -139,67 +214,40 @@ function AppContent() {
     }, 0);
   };
 
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminUsername === 'Admin' && adminPassword === 'Photon-12') {
-      setIsAdminLoggedIn(true);
-      setIsAdmin(true);
+  const handleAdminLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
       setScreen('admin-dashboard');
-      setLoginError('');
-      localStorage.setItem('lost-memories-admin', 'true');
-    } else {
-      setLoginError('Invalid username or password');
+    } catch (error: any) {
+      setLoginError(error.message || 'Login failed');
     }
   };
 
-  const handleAdminLogout = () => {
-    setIsAdminLoggedIn(false);
-    setIsAdmin(false);
+  const handleAdminLogout = async () => {
+    await signOut(auth);
     setScreen('cover');
-    setAdminUsername('');
-    setAdminPassword('');
-    localStorage.removeItem('lost-memories-admin');
-  };
-
-  const saveToLocal = (newChapters: Chapter[]) => {
-    setChapters(newChapters);
-    localStorage.setItem('lost-memories-chapters', JSON.stringify(newChapters));
   };
 
   const handleSaveChapter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingChapter) return;
+    if (!editingChapter || !isAdmin) return;
 
-    let newChapters;
-    if (editingChapter.id !== undefined && chapters.find(c => c.id === editingChapter.id)) {
-      // Update
-      newChapters = chapters.map(c => c.id === editingChapter.id ? editingChapter : c);
-    } else {
-      // Add
-      newChapters = [...chapters, { ...editingChapter, id: Date.now() }];
-    }
-    
-    saveToLocal(newChapters);
-    setEditingChapter(null);
-
-    // Auto-save to server
     setSaveStatus('saving');
     try {
-      const chResp = await fetch('/api/chapters', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newChapters)
+      const chapterDoc = doc(db, 'chapters', editingChapter.id.toString());
+      await setDoc(chapterDoc, {
+        label: editingChapter.label,
+        title: editingChapter.title,
+        content: editingChapter.content,
+        order: editingChapter.order || editingChapter.id,
+        id: editingChapter.id
       });
-      if (chResp.ok) {
-        setSaveStatus('success');
-        setTimeout(() => setSaveStatus('idle'), 3000);
-      } else {
-        const err = await chResp.json().catch(() => ({ error: 'Unknown error' }));
-        alert(`Failed to save chapter to server: ${err.error}\nDetails: ${err.details || 'None'}`);
-        setSaveStatus('error');
-      }
+      setEditingChapter(null);
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {
-      console.error("Failed to save chapter:", error);
+      handleFirestoreError(error, OperationType.WRITE, `chapters/${editingChapter.id}`);
       setSaveStatus('error');
     }
   };
@@ -208,58 +256,61 @@ function AppContent() {
     if (chapter) {
       setEditingChapter({ ...chapter });
     } else {
+      const nextOrder = chapters.length > 0 ? Math.max(...chapters.map(c => c.order)) + 1 : 1;
       setEditingChapter({
         id: Date.now(),
         label: `Chapter ${chapters.length + 1}`,
         title: '',
-        content: ''
+        content: '',
+        order: nextOrder
       });
     }
   };
 
-  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && isAdmin) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64String = reader.result as string;
-        setCoverImage(base64String);
-        localStorage.setItem('lost-memories-cover', base64String);
+        setSaveStatus('saving');
+        try {
+          await setDoc(doc(db, 'metadata', 'app_state'), { coverImage: base64String }, { merge: true });
+          setSaveStatus('success');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, 'metadata/app_state');
+          setSaveStatus('error');
+        }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const saveAllToServer = async () => {
+  const migrateData = async () => {
+    if (!isAdmin) return;
     setSaveStatus('saving');
     try {
-      // Save chapters
-      const chResp = await fetch('/api/chapters', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(chapters)
-      });
-
-      // Save cover
-      const cvResp = await fetch('/api/cover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cover: coverImage })
-      });
-
-      if (chResp.ok && cvResp.ok) {
-        setSaveStatus('success');
-        setTimeout(() => setSaveStatus('idle'), 3000);
-      } else {
-        const chErr = !chResp.ok ? await chResp.json().catch(() => ({ error: 'Unknown error' })) : null;
-        const cvErr = !cvResp.ok ? await cvResp.json().catch(() => ({ error: 'Unknown error' })) : null;
-        console.error("Save failed:", { chErr, cvErr });
-        alert(`Save failed!\nChapters: ${chErr?.error || 'OK'}\nCover: ${cvErr?.error || 'OK'}\nDetails: ${chErr?.details || cvErr?.details || 'None'}`);
-        setSaveStatus('error');
+      const staticResponse = await fetch('/chapters.json');
+      if (staticResponse.ok) {
+        const data = await staticResponse.json();
+        const batch = writeBatch(db);
+        data.forEach((ch: any, index: number) => {
+          const chDoc = doc(db, 'chapters', (ch.id || Date.now() + index).toString());
+          batch.set(chDoc, {
+            ...ch,
+            id: ch.id || Date.now() + index,
+            order: index
+          });
+        });
+        await batch.commit();
+        alert("Migration successful!");
       }
     } catch (error) {
-      console.error("Failed to save to server:", error);
-      setSaveStatus('error');
+      console.error("Migration failed:", error);
+      alert("Migration failed");
+    } finally {
+      setSaveStatus('idle');
     }
   };
 
@@ -394,84 +445,66 @@ function AppContent() {
                     <Lock size={40} />
                   </div>
                   <h2 className="font-serif-display text-[24px] text-[var(--txt)] text-center mb-8">Admin Access</h2>
-                  <form onSubmit={handleAdminLogin} className="space-y-4">
-                    <div>
-                      <label className="block text-[11px] uppercase tracking-wider text-[var(--txt3)] mb-1.5 ml-1">Username</label>
-                      <input 
-                        type="text" 
-                        value={adminUsername}
-                        onChange={(e) => setAdminUsername(e.target.value)}
-                        className="w-full bg-[var(--surf2)] border border-[var(--surf3)] rounded-lg p-3 text-[var(--txt)] focus:outline-none focus:border-[var(--gold)] transition-colors"
-                        placeholder="Enter username"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] uppercase tracking-wider text-[var(--txt3)] mb-1.5 ml-1">Password</label>
-                      <input 
-                        type="password" 
-                        value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
-                        className="w-full bg-[var(--surf2)] border border-[var(--surf3)] rounded-lg p-3 text-[var(--txt)] focus:outline-none focus:border-[var(--gold)] transition-colors"
-                        placeholder="Enter password"
-                        required
-                      />
-                    </div>
+                  
+                  <div className="space-y-4">
+                    <button 
+                      onClick={handleAdminLogin}
+                      className="w-full p-3.5 bg-white border border-gray-300 rounded-lg text-gray-700 font-sans text-[14px] flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors shadow-sm"
+                    >
+                      <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
+                      Sign in with Google
+                    </button>
+                    
                     {loginError && (
                       <div className="text-red-500 text-[12px] text-center bg-red-500/10 py-2 rounded-md border border-red-500/20">
                         {loginError}
                       </div>
                     )}
+                  </div>
+
+                  <div className="mt-8 pt-6 border-t border-[var(--surf3)] flex flex-col gap-3">
                     <button 
-                      type="submit"
-                      className="w-full p-3.5 bg-[var(--gold2)] rounded-lg text-[var(--gold)] font-serif-display text-[15px] cursor-pointer mt-2 transition-colors hover:bg-[#a07040]"
+                      onClick={() => setScreen('cover')}
+                      className="w-full p-3 text-[var(--txt3)] text-[12px] hover:text-[var(--gold)] transition-colors"
                     >
-                      Login as Admin
+                      Back to Home
                     </button>
-                  </form>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
-                      <div className="mt-8 pt-6 border-t border-[var(--surf3)] flex flex-col gap-3">
-                        <button 
-                          onClick={() => setScreen('cover')}
-                          className="w-full p-3 text-[var(--txt3)] text-[12px] hover:text-[var(--gold)] transition-colors"
-                        >
-                          Back to Home
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {screen === 'admin-dashboard' && isAdminLoggedIn && (
-                  <motion.div
-                    key="admin-dashboard"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 flex flex-col bg-[var(--surf)]"
-                  >
-                    <div className="p-[18px_20px_12px] flex items-center justify-between border-b border-[var(--surf3)]">
-                      <div className="flex items-center gap-3">
-                        <h2 className="font-serif-display text-[18px] text-[var(--txt)]">Admin Dashboard</h2>
-                        {saveStatus === 'success' && <span className="text-[10px] text-green-500 animate-pulse">Saved!</span>}
-                        {saveStatus === 'error' && <span className="text-[10px] text-red-500">Error saving</span>}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={saveAllToServer}
-                          disabled={saveStatus === 'saving'}
-                          className="text-[12px] bg-[var(--gold2)] text-[var(--gold)] px-3 py-1 rounded hover:bg-[#a07040] transition-colors flex items-center gap-1 disabled:opacity-50"
-                        >
-                          {saveStatus === 'saving' ? 'Saving...' : <><Save size={14} /> Save All</>}
-                        </button>
-                        <button 
-                          onClick={handleAdminLogout}
-                          className="text-[12px] text-[var(--txt3)] hover:text-[var(--gold)] transition-colors flex items-center gap-1"
-                        >
-                          <LogOut size={14} /> Logout
-                        </button>
-                      </div>
-                    </div>
+            {screen === 'admin-dashboard' && isAdmin && (
+              <motion.div
+                key="admin-dashboard"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 flex flex-col bg-[var(--surf)]"
+              >
+                <div className="p-[18px_20px_12px] flex items-center justify-between border-b border-[var(--surf3)]">
+                  <div className="flex items-center gap-3">
+                    <h2 className="font-serif-display text-[18px] text-[var(--txt)]">Admin Dashboard</h2>
+                    {saveStatus === 'success' && <span className="text-[10px] text-green-500 animate-pulse">Saved!</span>}
+                    {saveStatus === 'error' && <span className="text-[10px] text-red-500">Error saving</span>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {chapters.length === 0 && (
+                      <button 
+                        onClick={migrateData}
+                        className="text-[10px] text-[var(--gold)] border border-[var(--gold)] px-2 py-1 rounded hover:bg-[var(--gold)]/10"
+                      >
+                        Migrate Initial Data
+                      </button>
+                    )}
+                    <button 
+                      onClick={handleAdminLogout}
+                      className="text-[12px] text-[var(--txt3)] hover:text-[var(--gold)] transition-colors flex items-center gap-1"
+                    >
+                      <LogOut size={14} /> Logout
+                    </button>
+                  </div>
+                </div>
 
                 <div className="flex-1 overflow-y-auto p-5">
                   {!editingChapter && (
@@ -507,13 +540,23 @@ function AppContent() {
                         </button>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-[10px] uppercase text-[var(--txt3)] mb-1">ID (Order)</label>
+                          <label className="block text-[10px] uppercase text-[var(--txt3)] mb-1">ID (Unique)</label>
                           <input 
                             type="number" 
                             value={editingChapter.id}
                             onChange={(e) => setEditingChapter({...editingChapter, id: parseInt(e.target.value)})}
+                            className="w-full bg-[var(--surf2)] border border-[var(--surf3)] rounded p-2 text-[var(--txt)] text-[13px]"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-[var(--txt3)] mb-1">Order</label>
+                          <input 
+                            type="number" 
+                            value={editingChapter.order}
+                            onChange={(e) => setEditingChapter({...editingChapter, order: parseInt(e.target.value)})}
                             className="w-full bg-[var(--surf2)] border border-[var(--surf3)] rounded p-2 text-[var(--txt)] text-[13px]"
                             required
                           />
@@ -580,10 +623,14 @@ function AppContent() {
                             {confirmDeleteId === ch.id ? (
                               <div className="flex items-center gap-2">
                                 <button 
-                                  onClick={() => {
-                                    const newChapters = chapters.filter(c => c.id !== ch.id);
-                                    saveToLocal(newChapters);
-                                    setConfirmDeleteId(null);
+                                  onClick={async () => {
+                                    if (!isAdmin) return;
+                                    try {
+                                      await deleteDoc(doc(db, 'chapters', ch.id.toString()));
+                                      setConfirmDeleteId(null);
+                                    } catch (error) {
+                                      handleFirestoreError(error, OperationType.DELETE, `chapters/${ch.id}`);
+                                    }
                                   }}
                                   className="text-[10px] bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors"
                                 >
