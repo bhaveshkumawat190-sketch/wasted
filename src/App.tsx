@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Type, Menu, LogIn, LogOut, Database, Home, Trash2, Edit, Plus, Save, X, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Type, Menu, LogIn, LogOut, Database, Home, Trash2, Edit, Plus, Save, X, Lock, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 
@@ -74,6 +74,7 @@ function AppContent() {
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [coverImage, setCoverImage] = useState<string>('/cover.png');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,6 +90,11 @@ function AppContent() {
             setChapters(data);
             localStorage.setItem('lost-memories-chapters', JSON.stringify(data));
           }
+        }
+
+        const savedCover = localStorage.getItem('lost-memories-cover');
+        if (savedCover) {
+          setCoverImage(savedCover);
         }
       } catch (error) {
         console.error("Error loading chapters:", error);
@@ -175,6 +181,19 @@ function AppContent() {
     }
   };
 
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setCoverImage(base64String);
+        localStorage.setItem('lost-memories-cover', base64String);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
@@ -199,7 +218,7 @@ function AppContent() {
               >
                 <div className="cover-art w-[240px] h-[340px] bg-[var(--surf2)] rounded-sm border border-[var(--surf3)] flex flex-col items-center justify-center mb-8 relative overflow-hidden shadow-2xl">
                   <img 
-                    src="/cover.png" 
+                    src={coverImage} 
                     alt="How i lost my Sumi" 
                     className="absolute inset-0 w-full h-full object-cover"
                     referrerPolicy="no-referrer"
@@ -375,6 +394,28 @@ function AppContent() {
                     </div>
 
                 <div className="flex-1 overflow-y-auto p-5">
+                  {!editingChapter && (
+                    <div className="mb-8 p-4 bg-[var(--surf2)] border border-[var(--surf3)] rounded-lg">
+                      <h3 className="font-serif-display text-[15px] text-[var(--gold)] mb-3 flex items-center gap-2">
+                        <Camera size={16} /> Cover Image
+                      </h3>
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-24 bg-[var(--surf3)] rounded overflow-hidden flex-shrink-0 border border-[var(--surf3)]">
+                          <img src={coverImage} alt="Current Cover" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-[10px] uppercase text-[var(--txt3)] mb-2">Upload new cover</label>
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={handleCoverUpload}
+                            className="text-[11px] text-[var(--txt2)] file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[11px] file:bg-[var(--gold2)] file:text-[var(--gold)] hover:file:bg-[#a07040] transition-all cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {editingChapter ? (
                     <form onSubmit={handleSaveChapter} className="space-y-4">
                       <div className="flex items-center justify-between mb-2">
