@@ -67,7 +67,7 @@ function AppContent() {
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [coverImage, setCoverImage] = useState<string>('/cover.png');
+  const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1543333995-a78439f7efce?auto=format&fit=crop&q=80&w=1000');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
