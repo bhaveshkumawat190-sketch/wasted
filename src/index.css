@@ -1,0 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Lora:ital,wght@0,400;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif-display: "Playfair Display", serif;
+  --font-serif-body: "Lora", serif;
+}
+
+:root {
+  --bg: #0f0d0c;
+  --surf: #1a1714;
+  --surf2: #231f1b;
+  --surf3: #2e2a26;
+  --txt: #ede5d8;
+  --txt2: #a89070;
+  --txt3: #6b5040;
+  --gold: #c8a060;
+  --gold2: #8b6030;
+  --page: #faf6ef;
+  --ptxt: #1c1410;
+  --ptxt2: #6b5040;
+}
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font-serif-body);
+}
+
+.reader-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.reader-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.reader-scroll::-webkit-scrollbar-thumb {
+  background: var(--gold2);
+  border-radius: 10px;
+}
+
+.drop::first-letter {
+  font-family: var(--font-serif-display);
+  font-size: 58px;
+  float: left;
+  line-height: 0.78;
+  margin-right: 7px;
+  margin-top: 5px;
+  color: var(--gold2);
+}
+
+.markdown-body p {
+  margin-bottom: 1rem;
+}
+
+.markdown-body blockquote {
+  border-left: 2px solid var(--gold2);
+  padding-left: 0.875rem;
+  margin: 1.25rem 0;
+  font-style: italic;
+  color: var(--ptxt2);
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body strong {
+  font-weight: bold;
+}
