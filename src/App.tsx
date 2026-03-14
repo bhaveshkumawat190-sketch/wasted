@@ -75,29 +75,44 @@ function AppContent() {
   const [loginError, setLoginError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [coverImage, setCoverImage] = useState<string>('/cover.png');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const saved = localStorage.getItem('lost-memories-chapters');
-        if (saved) {
-          setChapters(JSON.parse(saved));
+        // Try server first
+        const response = await fetch('/api/chapters');
+        if (response.ok) {
+          const data = await response.json();
+          setChapters(data);
         } else {
-          const response = await fetch('/chapters.json');
-          if (response.ok) {
-            const data = await response.json();
-            setChapters(data);
-            localStorage.setItem('lost-memories-chapters', JSON.stringify(data));
+          // Fallback to local storage if server fails
+          const saved = localStorage.getItem('lost-memories-chapters');
+          if (saved) {
+            setChapters(JSON.parse(saved));
+          } else {
+            const staticResponse = await fetch('/chapters.json');
+            if (staticResponse.ok) {
+              const data = await staticResponse.json();
+              setChapters(data);
+            }
           }
         }
 
-        const savedCover = localStorage.getItem('lost-memories-cover');
-        if (savedCover) {
-          setCoverImage(savedCover);
+        const coverResponse = await fetch('/api/cover');
+        if (coverResponse.ok) {
+          const data = await coverResponse.json();
+          setCoverImage(data.cover);
+        } else {
+          const savedCover = localStorage.getItem('lost-memories-cover');
+          if (savedCover) {
+            setCoverImage(savedCover);
+          }
         }
       } catch (error) {
-        console.error("Error loading chapters:", error);
+        console.error("Error loading data:", error);
       } finally {
         setLoading(false);
       }
@@ -191,6 +206,35 @@ function AppContent() {
         localStorage.setItem('lost-memories-cover', base64String);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const saveAllToServer = async () => {
+    setSaveStatus('saving');
+    try {
+      // Save chapters
+      const chResp = await fetch('/api/chapters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chapters)
+      });
+
+      // Save cover
+      const cvResp = await fetch('/api/cover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cover: coverImage })
+      });
+
+      if (chResp.ok && cvResp.ok) {
+        setSaveStatus('success');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+      } else {
+        setSaveStatus('error');
+      }
+    } catch (error) {
+      console.error("Failed to save to server:", error);
+      setSaveStatus('error');
     }
   };
 
@@ -384,13 +428,24 @@ function AppContent() {
                     <div className="p-[18px_20px_12px] flex items-center justify-between border-b border-[var(--surf3)]">
                       <div className="flex items-center gap-3">
                         <h2 className="font-serif-display text-[18px] text-[var(--txt)]">Admin Dashboard</h2>
+                        {saveStatus === 'success' && <span className="text-[10px] text-green-500 animate-pulse">Saved!</span>}
+                        {saveStatus === 'error' && <span className="text-[10px] text-red-500">Error saving</span>}
                       </div>
-                      <button 
-                        onClick={handleAdminLogout}
-                        className="text-[12px] text-[var(--txt3)] hover:text-[var(--gold)] transition-colors flex items-center gap-1"
-                      >
-                        <LogOut size={14} /> Logout
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={saveAllToServer}
+                          disabled={saveStatus === 'saving'}
+                          className="text-[12px] bg-[var(--gold2)] text-[var(--gold)] px-3 py-1 rounded hover:bg-[#a07040] transition-colors flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {saveStatus === 'saving' ? 'Saving...' : <><Save size={14} /> Save All</>}
+                        </button>
+                        <button 
+                          onClick={handleAdminLogout}
+                          className="text-[12px] text-[var(--txt3)] hover:text-[var(--gold)] transition-colors flex items-center gap-1"
+                        >
+                          <LogOut size={14} /> Logout
+                        </button>
+                      </div>
                     </div>
 
                 <div className="flex-1 overflow-y-auto p-5">
