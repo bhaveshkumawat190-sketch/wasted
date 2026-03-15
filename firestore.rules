@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: stats
+    // Document ID: likes
+    // Fields:
+    //   - count: number (required, >= 0) - Total number of likes
+    //
+    // Collection: user_likes
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, matches auth.uid) - User ID
+    //   - timestamp: timestamp (required) - When the like occurred
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - role: string (optional) - User role (admin/user)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "bhavesh.kumawat@myoperator.co" && request.auth.token.email_verified == true));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidLikeStats(data) {
+      return data.count is number && data.count >= 0;
+    }
+
+    function isValidUserLike(data) {
+      return data.uid is string && data.uid == request.auth.uid
+        && data.timestamp is timestamp;
+    }
+
+    // Global stats
+    match /stats/likes {
+      allow read: if true;
+      // Allow creation if authenticated and count is 0 or 1
+      allow create: if isAuthenticated() 
+        && hasOnlyAllowedFields(['count'])
+        && isValidLikeStats(request.resource.data)
+        && (request.resource.data.count == 0 || request.resource.data.count == 1);
+      
+      // Allow incrementing the count
+      allow update: if isAuthenticated() 
+        && hasOnlyAllowedFields(['count'])
+        && isValidLikeStats(request.resource.data)
+        && request.resource.data.count == resource.data.count + 1;
+    }
+
+    // User likes
+    match /user_likes/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) 
+        && hasOnlyAllowedFields(['uid', 'timestamp'])
+        && isValidUserLike(request.resource.data);
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "LikeStats": {
+      "title": "Like Statistics",
+      "description": "Global statistics for likes",
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "Total number of likes"
+        }
+      },
+      "required": ["count"]
+    },
+    "UserLike": {
+      "title": "User Like",
+      "description": "Record of a user's like",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User ID of the person who liked"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the like occurred"
+        }
+      },
+      "required": ["uid", "timestamp"]
+    }
+  },
+  "firestore": {
+    "stats/likes": {
+      "schema": "LikeStats",
+      "description": "Global like counter"
+    },
+    "user_likes/{userId}": {
+      "schema": "UserLike",
+      "description": "Individual user like records"
+    },
+    "users/{userId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string" }
+        }
+      },
+      "description": "User profiles and roles"
+    }
+  }
+}

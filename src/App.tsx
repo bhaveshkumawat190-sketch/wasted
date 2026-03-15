@@ -4,22 +4,13 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Type, Menu, Home } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Type, Menu, Home, Instagram, Heart, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { auth, initAuth, getLikeCount, checkIfLiked, addLike } from './firebase';
 
-type Screen = 'cover' | 'toc' | 'reader';
-
-interface Chapter {
-  id: number;
-  label: string;
-  title: string;
-  content: string;
-  isNew?: boolean;
-}
-
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
-  constructor(props: { children: React.ReactNode }) {
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
+  constructor(props: any) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -34,14 +25,25 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 
   render() {
     if (this.state.hasError) {
+      let message = "Something went wrong.";
+      try {
+        const parsed = JSON.parse(this.state.error.message);
+        if (parsed.error && parsed.error.includes("Missing or insufficient permissions")) {
+          message = "You don't have permission to perform this action. Please make sure you are logged in correctly.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+
       return (
-        <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6 text-center">
-          <div className="bg-[var(--surf)] p-8 rounded-2xl shadow-2xl border border-[var(--surf3)] max-w-md">
-            <h2 className="text-[var(--gold)] font-serif-display text-2xl mb-4">Application Error</h2>
-            <p className="text-[var(--txt2)] text-sm mb-6">{this.state.error?.message || "Something went wrong."}</p>
+        <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6">
+          <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-red-100">
+            <AlertCircle className="mx-auto text-red-500 mb-4" size={48} />
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Application Error</h2>
+            <p className="text-gray-600 mb-6">{message}</p>
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-[var(--gold2)] text-[var(--gold)] rounded-lg font-serif-display hover:bg-[#a07040] transition-colors"
+              className="bg-[var(--gold)] text-white px-6 py-2 rounded-full font-medium hover:opacity-90 transition-opacity"
             >
               Reload Application
             </button>
@@ -52,6 +54,16 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 
     return this.props.children;
   }
+}
+
+type Screen = 'cover' | 'toc' | 'reader';
+
+interface Chapter {
+  id: number;
+  label: string;
+  title: string;
+  content: string;
+  isNew?: boolean;
 }
 
 export default function App() {
@@ -67,11 +79,15 @@ function AppContent() {
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
+  const [likeCount, setLikeCount] = useState<number>(0);
+  const [hasLiked, setHasLiked] = useState<boolean>(false);
+  const [isLiking, setIsLiking] = useState<boolean>(false);
   const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1773488966076-d2c6b3735e20?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadData = async () => {
+      // Load chapters first so the app isn't blocked by auth
       try {
         const response = await fetch('/chapters.json');
         if (response.ok) {
@@ -82,6 +98,25 @@ function AppContent() {
         console.error("Error loading chapters:", error);
       } finally {
         setLoading(false);
+      }
+
+      // Initialize Auth for the like system in the background
+      try {
+        const user: any = await initAuth();
+        
+        if (user) {
+          // Check if liked
+          const liked = await checkIfLiked(user.uid);
+          setHasLiked(liked);
+        }
+
+        // Listen for like count
+        getLikeCount((count) => {
+          setLikeCount(count);
+        });
+      } catch (error) {
+        console.error("Firebase Auth/Like system error:", error);
+        // We don't set loading to false here because chapters might still be loading or already loaded
       }
     };
 
@@ -99,6 +134,26 @@ function AppContent() {
     }, 0);
   };
 
+  const handleLike = async () => {
+    if (hasLiked || isLiking || !auth.currentUser) {
+      if (!auth.currentUser) {
+        console.warn("Like system: Authentication not initialized. Please enable Anonymous Auth in Firebase Console.");
+      }
+      return;
+    }
+    setIsLiking(true);
+    try {
+      const success = await addLike(auth.currentUser.uid);
+      if (success) {
+        setHasLiked(true);
+      }
+    } catch (error) {
+      console.error("Like failed:", error);
+    } finally {
+      setIsLiking(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
@@ -112,6 +167,25 @@ function AppContent() {
       <div className="w-full max-w-[500px] bg-[var(--surf)] relative flex flex-col shadow-2xl min-h-screen">
         
         <div className="flex-1 relative overflow-hidden">
+          {/* Global Like Button */}
+          <div className="fixed bottom-6 right-6 z-50 sm:absolute sm:bottom-6 sm:right-6">
+            <button 
+              onClick={handleLike}
+              disabled={hasLiked || isLiking}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-lg transition-all transform active:scale-95 ${
+                hasLiked 
+                  ? 'bg-[var(--gold)] text-white' 
+                  : 'bg-white text-[var(--txt)] border border-[var(--surf3)] hover:border-[var(--gold)]'
+              }`}
+            >
+              <Heart 
+                size={18} 
+                className={hasLiked ? 'fill-current' : ''} 
+              />
+              <span className="text-sm font-medium">{likeCount}</span>
+            </button>
+          </div>
+
           <AnimatePresence mode="wait">
             {screen === 'cover' && (
               <motion.div
@@ -134,11 +208,22 @@ function AppContent() {
                 </div>
 
                 <div className="text-center mb-6">
-                  <h1 className="font-serif-display text-[22px] text-[var(--txt)] leading-[1.3]">Lost Memories with Sumi</h1>
+                  <h1 className="font-serif-display text-[22px] text-[var(--txt)] leading-[1.3]">All about Sumi</h1>
                   <p className="text-[13px] text-[var(--txt2)] mt-1 italic">by Sumo</p>
-                  <span className="inline-block text-[10px] text-[var(--gold)] border border-[var(--gold2)] px-2.5 py-0.5 rounded-full mt-2.5 tracking-[0.08em]">
-                    New chapter every week
-                  </span>
+                  <div className="flex flex-col items-center gap-2 mt-3">
+                    <span className="inline-block text-[10px] text-[var(--gold)] border border-[var(--gold2)] px-2.5 py-0.5 rounded-full tracking-[0.08em]">
+                      New chapter every week
+                    </span>
+                    <a 
+                      href="https://www.instagram.com/abstractfeeder/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-[11px] text-[var(--txt2)] hover:text-[var(--gold)] transition-colors mt-1"
+                    >
+                      <span>Connect at</span>
+                      <Instagram size={14} />
+                    </a>
+                  </div>
                 </div>
 
                 <button 
@@ -253,7 +338,16 @@ function AppContent() {
                   <div className="tbc-block mt-8 pt-6 border-t border-[#d0c8b8] text-center">
                     <div className="tbc-ornament text-[20px] text-[#b0a890] tracking-[0.3em] mb-3">* * *</div>
                     <div className="tbc-text font-serif-display text-[17px] text-[var(--ptxt2)] italic">To be continued...</div>
-                    <div className="tbc-sub text-[12px] text-[#a09888] mt-1.5 font-sans">New chapter coming next week</div>
+                    <div className="tbc-sub text-[12px] text-[#a09888] mt-1.5 font-sans">New chapter coming next week </div>
+                    <a 
+                      href="https://www.instagram.com/abstractfeeder/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] text-[var(--gold)] hover:underline mt-3"
+                    >
+                      <span>Follow For Updates</span>
+                      <Instagram size={14} />
+                    </a>
                   </div>
                 </div>
 
