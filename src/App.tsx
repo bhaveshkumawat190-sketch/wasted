@@ -82,7 +82,7 @@ function AppContent() {
   const [likeCount, setLikeCount] = useState<number>(0);
   const [hasLiked, setHasLiked] = useState<boolean>(false);
   const [isLiking, setIsLiking] = useState<boolean>(false);
-  const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1773488966076-d2c6b3735e20?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
+  const [coverImage, setCoverImage] = useState<string>('https://images.unsplash.com/photo-1773597312913-3f7430f26008?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
   const readerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -201,7 +201,7 @@ function AppContent() {
                     alt="How i lost my Sumi" 
                     className="absolute inset-0 w-full h-full object-cover z-0"
                     onError={(e) => {
-                      e.currentTarget.src = "https://images.unsplash.com/photo-1773488966076-d2c6b3735e20?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
+                      e.currentTarget.src = "https://images.unsplash.com/photo-1773597312913-3f7430f26008?q=80&w=1011&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D";
                       e.currentTarget.className = "absolute inset-0 w-full h-full object-cover";
                     }}
                   />
@@ -215,7 +215,7 @@ function AppContent() {
                       New chapter every week
                     </span>
                     <a 
-                      href="https://www.instagram.com/abstractfeeder/" 
+                      href="https://www.instagram.com/all.about.sumi_book/" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center gap-1.5 text-[11px] text-[var(--txt2)] hover:text-[var(--gold)] transition-colors mt-1"
@@ -340,7 +340,7 @@ function AppContent() {
                     <div className="tbc-text font-serif-display text-[17px] text-[var(--ptxt2)] italic">To be continued...</div>
                     <div className="tbc-sub text-[12px] text-[#a09888] mt-1.5 font-sans">New chapter coming next week </div>
                     <a 
-                      href="https://www.instagram.com/abstractfeeder/" 
+                      href="https://www.instagram.com/all.about.sumi_book/" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-[11px] text-[var(--gold)] hover:underline mt-3"
